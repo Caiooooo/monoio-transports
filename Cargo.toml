@@ -10,7 +10,7 @@ version = "0.5.3"
 monoio = "0.2.3"
 monoio-compat = "0.2.1"
 service-async = "0.2.0"
-monoio-rustls = "0.4.0"
+monoio-rustls = {git  = "https://github.com/Caiooooo/monoio-tls", branch = "master"}
 monoio-http = "0.3.8"
 monoio-codec = "0.3.1"
 monoio-native-tls = { version = "0.4.0", optional = true, features = ["alpn"] }
@@ -48,7 +48,7 @@ tracing = "0.1"
 tracing-subscriber = "0.3"
 
 [features]
-default = ["time", "hyper"]
+default = ["time", "proxy"]
 # Enable this feature to make connection pool periodically checking works.
 # You must enable time driver to use it.
 time = []

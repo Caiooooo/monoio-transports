@@ -1,16 +1,19 @@
 use http::{request, Uri};
+use monoio::net::TcpStream;
 use monoio_http::{common::body::HttpBody, h1::payload::Payload};
+use monoio_rustls::stream::Stream;
 use monoio_transports::{
     connectors::{Connector, TcpConnector, TcpTlsAddr, TlsConnector},
     http::HttpConnector,
 };
+use rustls::ClientConnection;
 
 #[monoio::main]
 async fn main() -> Result<(), monoio_transports::TransportError> {
     // Https conector with HTTP_2 and HTTP_11 support.
     // TLS ALPN is set to h2, http/1.1. This will make the connector
     // to use HTTP_2 if the server supports it, otherwise it will fallback to HTTP_11.
-    let mut connector: HttpConnector<TlsConnector<TcpConnector>, _, _> =
+    let mut connector: HttpConnector<TlsConnector<TcpConnector>, TcpTlsAddr, Stream<TcpStream, ClientConnection>> =
         HttpConnector::build_tls_http2_only();
     connector.h2_builder().max_concurrent_streams(150);
     let uri = "https://httpbin.org/get".parse::<Uri>().unwrap();
