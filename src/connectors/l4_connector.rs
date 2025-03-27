@@ -6,7 +6,7 @@ use std::{
 
 use http::Uri;
 use monoio::{
-    io::{AsyncReadRent, AsyncWriteRent, Split},
+    io::{AsyncReadRent, AsyncWriteRent, Split, AsyncWriteRentExt},
     net::{TcpStream, UnixStream},
 };
 
@@ -32,13 +32,70 @@ impl<T: ToSocketAddrs> Connector<T> for TcpConnector {
 
     #[inline]
     async fn connect(&self, key: T) -> Result<Self::Connection, Self::Error> {
-        TcpStream::connect(key).await.map(|io| {
+        #[cfg(feature = "proxy")]
+        {
+            let proxy = std::env::var("http_proxy")
+                .or_else(|_| std::env::var("HTTP_PROXY"))
+                .ok();
+            
+            match proxy {
+                Some(addr) => {
+                    let proxy_url = addr.parse::<hyper::Uri>().map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
+                    let addr = format!{"{}:{}", proxy_url.host().unwrap(), proxy_url.port_u16().unwrap_or(7890)};
+                    let stream = TcpStream::connect(addr).await?;
+                    // stream.set_nodelay(true);
+                    tunnel::<T>(stream, key).await.inspect(|io| {
+                        // we will ignore the set nodelay error
+                        let _ = io.set_nodelay(true);
+                    })
+                }
+                None => {
+                    TcpStream::connect(key).await.inspect(|io| {
+                        // we will ignore the set nodelay error
+                        let _ = io.set_nodelay(true);
+                    })
+                }
+            }
+        }
+        TcpStream::connect(key).await.inspect(|io| {
             if self.no_delay {
                 // we will ignore the set nodelay error
                 let _ = io.set_nodelay(true);
             }
-            io
         })
+    }
+}
+
+#[cfg(feature = "proxy")]
+async fn tunnel<A>(mut conn: TcpStream, addr: A) -> Result<TcpStream, std::io::Error> 
+    where  A: ToSocketAddrs
+{
+    type Error = io::Error;
+    let addr = addr.to_socket_addrs().unwrap().next().unwrap();
+    let connect_req = format!("CONNECT {addr} HTTP/1.1\r\nHOST: {addr}\r\n\r\n");
+    let mut buf = Vec::with_capacity(8 * 1024);
+    buf.extend_from_slice(connect_req.as_bytes());
+    let (mut res,mut buf) = conn.write_all(buf).await;
+    res?;
+    buf.clear();
+    let mut pos = 0;
+    loop{
+        (res, buf) = conn.read(buf).await;
+        let res = res?;
+        if res == 0 {
+            return Err(Error::new(std::io::ErrorKind::UnexpectedEof, "unexpected eof"));
+        }
+        pos += res;
+        let recvd = std::str::from_utf8(&buf[..pos]);
+        let recvd = recvd.map_err(|e| Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if recvd.starts_with("HTTP/1.1 200") || recvd.starts_with("HTTP/1.0 200") || recvd.starts_with("HTTP/2 200"){
+            if recvd.ends_with("\r\n\r\n") {
+                return Ok(conn);
+            }
+            if res == buf.len() {
+                return Err(Error::new(std::io::ErrorKind::InvalidData, "invalid data"));
+            }
+        }
     }
 }
 
