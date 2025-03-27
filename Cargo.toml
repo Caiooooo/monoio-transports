@@ -52,6 +52,7 @@ default = ["time"]
 # Enable this feature to make connection pool periodically checking works.
 # You must enable time driver to use it.
 time = []
+proxy = ["hyper"]
 
 hyper = [
     "dep:hyper",
