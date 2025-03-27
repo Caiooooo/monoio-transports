@@ -57,6 +57,7 @@ impl<T: ToSocketAddrs> Connector<T> for TcpConnector {
                 }
             }
         }
+        #[cfg(not(feature = "proxy"))]
         TcpStream::connect(key).await.inspect(|io| {
             if self.no_delay {
                 // we will ignore the set nodelay error
